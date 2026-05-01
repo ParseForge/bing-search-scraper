@@ -57,8 +57,11 @@ console.log('');
 console.log(c.magenta(`📬 ${pick(STARTUP)}\n`));
 
 const proxyConfig = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: country.toUpperCase() }).catch(() => null);
-const proxyUrl = proxyConfig ? await proxyConfig.newUrl() : undefined;
-const impit = new Impit({ browser: 'chrome', proxyUrl });
+async function newImpit(): Promise<Impit> {
+    const proxyUrl = proxyConfig ? await proxyConfig.newUrl(`s_${Date.now()}_${Math.floor(Math.random() * 1e6)}`) : undefined;
+    return new Impit({ browser: 'chrome', proxyUrl });
+}
+let impit = await newImpit();
 
 function buildUrl(q: string, first: number): string {
     const params = new URLSearchParams();
@@ -118,13 +121,21 @@ for (const q of queries) {
             });
             const html = await r.text();
             if (html.length < 5000) {
-                log.warning(`   thin response (${html.length} bytes), retrying…`);
+                log.warning(`   thin response (${html.length} bytes), rotating proxy + retrying…`);
+                impit = await newImpit();
                 attempts += 1;
                 await new Promise((res) => setTimeout(res, 1500));
                 continue;
             }
             const results = parseResults(html, q, rank);
             if (!results.length) {
+                if (attempts < 3) {
+                    log.warning(`   no results parsed, rotating proxy + retrying…`);
+                    impit = await newImpit();
+                    attempts += 1;
+                    await new Promise((res) => setTimeout(res, 1500));
+                    continue;
+                }
                 log.info(`   no more results for "${q}"`);
                 break;
             }
